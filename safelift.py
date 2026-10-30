@@ -25,6 +25,7 @@ import numpy as np
 from mediapipe.tasks.python import BaseOptions, vision
 
 import gemma
+import ml
 import reba
 
 ROOT = Path(__file__).parent
@@ -156,8 +157,14 @@ def wrap(text, width=60):
     return lines + [cur] if cur else lines
 
 
-def draw(frame, norm, band, trunk, twist, show_deg, ask=None, status="", label=None):
+def draw(frame, norm, band, trunk, twist, show_deg, ask=None, status="", label=None, risk=None):
     h, w = frame.shape[:2]
+    if risk and norm:  # Snowflake ML verdict, beside (never instead of) the REBA band
+        r_label, r_prob, r_src = risk
+        rc = (180, 60, 200) if r_label == "bad" else (90, 90, 90)
+        cv2.rectangle(frame, (10, 80), (330, 130), rc, -1)
+        text = f"ML: {'RISKY' if r_label == 'bad' else 'ok'} {r_prob:.2f}" + (" (stub)" if r_src == "stub" else "")
+        cv2.putText(frame, text, (22, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
     if label:  # labelling mode: make the current label impossible to miss
         lc = COLOURS["green"] if label == "good" else COLOURS["red"]
         cv2.rectangle(frame, (w - 300, 80), (w - 10, 150), lc, -1)
@@ -231,6 +238,8 @@ def main():
     writer = threading.Thread(target=sink, args=(q,), daemon=True)
     writer.start()
     pool = ThreadPoolExecutor(max_workers=2)  # Gemma calls never block the camera loop
+    ml_pool = ThreadPoolExecutor(max_workers=1)  # ML predict (~3.5 s): only the latest reading is scored
+    ml_job, risk, prev, recent = None, None, None, []
 
     opts = vision.PoseLandmarkerOptions(base_options=BaseOptions(model_asset_path=str(MODEL)),
                                         running_mode=vision.RunningMode.VIDEO)
@@ -282,8 +291,19 @@ def main():
                                   round(knee, 1), band, alarm_in_window, args.staff, label)))
                 readings.append({"band": band, "trunk": trunk, "twist": twist, "alarm": alarm_in_window})
                 last_sample, alarm_in_window = t, False
+                recent = (recent + [trunk])[-3:]
+                if ml_job is None:  # skip this reading if the previous predict is still running
+                    ml_job = ml_pool.submit(ml.ml_risk, ml.features(trunk, twist, knee, prev, recent))
+                prev = (trunk, twist)
 
-            draw(frame, norm, band, trunk, twist, show_deg, ask, status, label)
+            if ml_job and ml_job.done():
+                try:
+                    risk = ml_job.result()
+                except Exception:
+                    risk = None
+                ml_job = None
+
+            draw(frame, norm, band, trunk, twist, show_deg, ask, status, label, risk)
             cv2.imshow("Safe Lift", frame)
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
@@ -305,6 +325,7 @@ def main():
     q.put(None)
     writer.join(timeout=15)
     pool.shutdown(wait=False, cancel_futures=True)
+    ml_pool.shutdown(wait=False, cancel_futures=True)
 
 
 if __name__ == "__main__":
