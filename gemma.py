@@ -59,8 +59,9 @@ def gemma(prompt, image=None, tools=None, retries=3):
         try:
             r = client().models.generate_content(model=MODEL, contents=parts, config=cfg)
             out = [{"name": c.name, "args": dict(c.args)} for c in (r.function_calls or [])] if tools else r.text
-            CACHE.mkdir(exist_ok=True)
-            (CACHE / f"{key}.json").write_text(json.dumps(out, ensure_ascii=False))
+            if out:  # an empty reply must never replace a good cached answer
+                CACHE.mkdir(exist_ok=True)
+                (CACHE / f"{key}.json").write_text(json.dumps(out, ensure_ascii=False))
             return out, "live"
         except Exception as e:  # transient 500s were seen in testing
             err = e
