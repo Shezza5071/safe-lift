@@ -4,6 +4,7 @@ Every call returns (text, source) where source is "live" or "cache", so the UI c
 """
 import hashlib
 import json
+import mimetypes
 import os
 import re
 import time
@@ -37,11 +38,19 @@ def strip_fences(text):
     return re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
 
 
+def mime(image):
+    """Image type from the file extension (room photos are JPEG, skeleton snapshots PNG)."""
+    kind = mimetypes.guess_type(str(image))[0]
+    if kind not in ("image/png", "image/jpeg", "image/webp"):
+        raise ValueError(f"unsupported image type for Gemma: {image}")
+    return kind
+
+
 def gemma(prompt, image=None, tools=None, retries=3):
     """Returns (text, source) or, with tools, (function_calls, source). Raises only if no cache exists."""
     parts = [prompt]
     if image:
-        parts.insert(0, types.Part.from_bytes(data=Path(image).read_bytes(), mime_type="image/png"))
+        parts.insert(0, types.Part.from_bytes(data=Path(image).read_bytes(), mime_type=mime(image)))
     key = hashlib.sha256((prompt + (Path(image).name if image else "") + str(bool(tools))).encode()).hexdigest()[:16]
     cfg = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_level="minimal"),
                                       tools=tools)
