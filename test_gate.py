@@ -39,7 +39,7 @@ def test_demo_plans_read_from_cache_offline(monkeypatch):
     for p in PLANS:
         rules[p.stem], src = gate.read_plan(p)
         assert src == "cache"
-        assert rules[p.stem]["staff_required"] >= 1 and rules[p.stem]["equipment"]
+        assert rules[p.stem]["staff_required"] >= 1
     assert rules["plan_bed_to_chair"]["staff_required"] == 2  # the demo plan: hoist + 2 staff
 
 
@@ -52,3 +52,49 @@ def test_image_type_follows_extension(path, kind):
 def test_unsupported_image_type_fails_early():
     with pytest.raises(ValueError):
         gemma.mime("plan.pdf")
+
+
+def _offline(monkeypatch):
+    def offline():
+        raise ConnectionError("offline")
+    monkeypatch.setattr(gemma, "client", offline)
+    monkeypatch.setattr(gemma.time, "sleep", lambda s: None)
+
+
+@pytest.mark.parametrize("room, allowed", [("room_1.jpg", False), ("room_2.jpg", True)])
+def test_demo_rooms_gate_from_cache_offline(monkeypatch, room, allowed):
+    """Demo fallback: 1 person blocks the 2-staff plan, 2 people allow it, with no network."""
+    _offline(monkeypatch)
+    demo = Path(__file__).parent / "demo"
+    rules, _ = gate.read_plan(demo / "plan_demo_two_staff.png")
+    result = gate.check_room(demo / room, rules)
+    assert result["allowed"] is allowed and result["source"] == "cache"
+    assert [c["name"] for c in result["calls"]][0] == "set_checklist"
+
+
+@pytest.mark.parametrize("verdict, allowed, reason", [
+    ([{"name": "allow_task", "args": {}}], True, "Plan met"),
+    ([{"name": "block_task", "args": {"reason": "Plan says 2 staff, 1 seen"}}], False, "Plan says 2 staff, 1 seen"),
+    ([], False, "No verdict from Gemma: check the room by hand"),
+])
+def test_check_room_verdicts_fail_closed(monkeypatch, verdict, allowed, reason):
+    replies = iter([([{"name": "set_checklist", "args": {"items": ["2 staff: 2 seen"]}}], "live"), (verdict, "live")])
+    monkeypatch.setattr(gemma, "gemma", lambda *a, **k: next(replies))
+    result = gate.check_room("room.jpg", GOOD)
+    assert (result["allowed"], result["reason"]) == (allowed, reason)
+
+
+def test_check_room_blocks_when_gemma_unavailable(monkeypatch):
+    def down(*a, **k):
+        raise RuntimeError("Gemma failed after 3 tries")
+    monkeypatch.setattr(gemma, "gemma", down)
+    result = gate.check_room("room.jpg", GOOD)
+    assert result["allowed"] is False and result["source"] == "error"
+
+
+def test_draw_gate_panel_draws_on_frame():
+    import numpy as np
+    frame = np.zeros((720, 1280, 3), np.uint8)
+    gate.draw_gate_panel(frame, {"allowed": False, "reason": "Plan says 2 staff, 1 seen", "source": "cache",
+                                 "calls": [{"name": "block_task", "args": {"reason": "x"}}]})
+    assert frame[100, 10].tolist() == [40, 40, 220]  # red banner

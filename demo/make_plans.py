@@ -2,6 +2,7 @@
 
 Run from the repo root: .venv/bin/python demo/make_plans.py
 Content follows testdata/plans_text (R01, R05, R12), one transfer task per plan.
+plan_demo_two_staff matches the demo room photos (demo/room_*.jpg): a box as the bed, no hoist or slide sheet.
 """
 from pathlib import Path
 
@@ -11,6 +12,13 @@ OUT = Path(__file__).parent
 FONT = "/System/Library/Fonts/Helvetica.ttc"
 
 PLANS = {
+    "plan_demo_two_staff": ("R13", "Bed to chair", [
+        ("Staff required", "2"),
+        ("Equipment", "None"),
+        ("Method", "Assisted transfer with 2 staff. Never attempt with 1 staff."),
+        ("Mobility", "Partially cooperative; partial weight bearing"),
+        ("Notes", "Explain each step before moving."),
+    ]),
     "plan_bed_to_chair": ("R01", "Bed to chair", [
         ("Staff required", "2"),
         ("Equipment", "Ceiling hoist, full body sling"),

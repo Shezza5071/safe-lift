@@ -2,12 +2,20 @@
 
 read_plan returns the plan rules (contract 4 on the map):
 {"task": str, "staff_required": int, "equipment": [str], "notes": str}
+check_room gives Gemma the contract-5 functions (set_checklist, then block_task / allow_task) and returns
+{"allowed": bool, "reason": str, "calls": [...], "source": "live" | "cache" | "error"}; no verdict means blocked.
 
-Run from the repo root to read every demo plan: .venv/bin/python gate.py
+Run from the repo root:
+  .venv/bin/python gate.py                        read every demo plan
+  .venv/bin/python gate.py room PLAN ROOM [...]   check room photos against a plan (panel previews in snapshots/)
 """
 import json
 import sys
+import textwrap
 from pathlib import Path
+
+import cv2
+from google.genai import types
 
 import gemma
 
@@ -49,8 +57,98 @@ def read_plan(image_path):
     return check_rules(rules), src
 
 
+def _fn(name, description, **params):
+    schema = types.Schema(type="OBJECT", properties=params, required=list(params)) if params else None
+    return types.FunctionDeclaration(name=name, description=description, parameters=schema)
+
+
+CHECKLIST_TOOLS = [types.Tool(function_declarations=[
+    _fn("set_checklist", "Show the trainer the setup checklist, one line per plan requirement with what you see.",
+        items=types.Schema(type="ARRAY", items=types.Schema(type="STRING"))),
+])]
+VERDICT_TOOLS = [types.Tool(function_declarations=[
+    _fn("block_task", "Block the lift because the room does not meet the plan.", reason=types.Schema(type="STRING")),
+    _fn("allow_task", "Allow the lift because every plan requirement is met."),
+])]
+
+ROOM = """You are the setup gate for a care-worker training lift. The image is the training room.
+The resident's manual handling plan requires: {rules}
+Training props stand in for the real thing (e.g. a box as the bed, a towel as the slide sheet)."""
+
+CHECKLIST_PROMPT = ROOM + """
+Count the staff: adults standing ready to do the transfer. Look for each item in "equipment" only;
+do not add requirements the plan does not list. Call set_checklist with one short line per requirement,
+e.g. ["2 staff: 1 seen", "slide sheet: seen"]."""
+
+VERDICT_PROMPT = ROOM + """
+Your checklist for this room: {checklist}
+Decide from the checklist only: the requirements are staff_required and the equipment list, nothing else
+(the task name and the room's furniture are not requirements). Call block_task with a short reason naming what is missing (e.g. "Plan says 2 staff, 1 seen"),
+or allow_task if every requirement is met. If you are unsure, block."""
+
+
+def _first(calls, *names):
+    return next((c for c in calls if c["name"] in names), None)
+
+
+def check_room(room_image, rules):
+    """Gemma checks a room photo against plan rules in two function-calling turns (checklist, then verdict).
+
+    Gemma makes one call per turn, so the verdict turn is given the checklist. Fails closed: no verdict means blocked.
+    """
+    plan = json.dumps(rules)
+    try:
+        calls, src1 = gemma.gemma(CHECKLIST_PROMPT.format(rules=plan), room_image, tools=CHECKLIST_TOOLS)
+        checklist = (_first(calls, "set_checklist") or {"args": {}})["args"].get("items", [])
+        verdict, src2 = gemma.gemma(VERDICT_PROMPT.format(rules=plan, checklist=json.dumps(checklist)), room_image,
+                                    tools=VERDICT_TOOLS)
+    except RuntimeError as e:  # no network and no cache
+        return {"allowed": False, "reason": f"Setup check failed: {e}", "calls": [], "source": "error"}
+    calls += verdict
+    src = "cache" if "cache" in (src1, src2) else "live"
+    call = _first(verdict, "block_task", "allow_task")
+    if call and call["name"] == "allow_task":
+        return {"allowed": True, "reason": "Plan met", "calls": calls, "source": src}
+    if call:
+        return {"allowed": False, "reason": call["args"].get("reason") or "Plan not met", "calls": calls, "source": src}
+    return {"allowed": False, "reason": "No verdict from Gemma: check the room by hand", "calls": calls, "source": src}
+
+
+def _ascii(s):
+    return s.encode("ascii", "replace").decode()  # cv2.putText draws ASCII only
+
+
+def draw_gate_panel(frame, result):
+    """Big BLOCKED / READY banner under the posture bar, and Gemma's function calls in a small panel."""
+    h, w = frame.shape[:2]
+    colour = (60, 180, 75) if result["allowed"] else (40, 40, 220)
+    word = "READY" if result["allowed"] else "BLOCKED"
+    cached = " (cached)" if result["source"] == "cache" else ""
+    cv2.rectangle(frame, (0, 80), (w, 190), colour, -1)
+    cv2.putText(frame, f"SETUP: {word}{cached}", (20, 135), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (255, 255, 255), 4)
+    cv2.putText(frame, _ascii(result["reason"])[:70], (20, 175), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    lines = ["GEMMA FUNCTION CALLS:"]
+    for c in result["calls"]:
+        lines += textwrap.wrap(_ascii(f"{c['name']}({json.dumps(c['args'])})"), 48)
+    lines = lines[:12]
+    left, top = w - 560, h - 26 * len(lines) - 30
+    cv2.rectangle(frame, (left - 10, top - 10), (w - 10, h - 10), (30, 30, 30), -1)
+    for i, line in enumerate(lines):
+        cv2.putText(frame, line, (left, top + 18 + 26 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+    return frame
+
+
 if __name__ == "__main__":
-    plans = sys.argv[1:] or sorted(str(p) for p in (Path(__file__).parent / "demo").glob("plan_*.png"))
-    for p in plans:
-        rules, src = read_plan(p)
-        print(f"{Path(p).name}{' (cached)' if src == 'cache' else ''}: {json.dumps(rules)}")
+    if sys.argv[1:2] == ["room"]:
+        rules, _ = read_plan(sys.argv[2])
+        out = Path(__file__).parent / "snapshots"
+        out.mkdir(exist_ok=True)
+        for room in sys.argv[3:]:
+            result = check_room(room, rules)
+            print(f"{Path(room).name}: {json.dumps(result)}")
+            cv2.imwrite(str(out / f"gate_{Path(room).stem}.png"), draw_gate_panel(cv2.imread(room), result))
+    else:
+        plans = sys.argv[1:] or sorted(str(p) for p in (Path(__file__).parent / "demo").glob("plan_*.png"))
+        for p in plans:
+            rules, src = read_plan(p)
+            print(f"{Path(p).name}{' (cached)' if src == 'cache' else ''}: {json.dumps(rules)}")
