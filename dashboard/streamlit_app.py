@@ -89,8 +89,11 @@ with tab_over:
     card(c[4], "Labelled readings", f"{int(tot['LABELLED'])}", "trainer-labelled, for the risk model", INDIGO)
 
     st.markdown("#### Risk band mix by session")
-    mix = q("""select session_id, min(ts) started, any_value(task) task, reba_band, count(*) n
-               from H4H.APP.EVENTS group by session_id, reba_band""")
+    mix = q("""select e.session_id, s.started, s.task, e.reba_band, count(*) n
+               from H4H.APP.EVENTS e
+               join (select session_id, min(ts) started, any_value(task) task from H4H.APP.EVENTS group by 1) s
+                 on s.session_id = e.session_id
+               group by 1, 2, 3, 4""")
     mix["session"] = pd.to_datetime(mix["STARTED"]).dt.strftime("%d %b %H:%M") + " · " + mix["TASK"].str.replace("_", " ")
     st.altair_chart(chart(alt.Chart(mix).mark_bar().encode(
         x=alt.X("sum(N):Q", stack="normalize", title="share of readings", axis=alt.Axis(format="%")),
