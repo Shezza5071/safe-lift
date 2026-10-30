@@ -1,11 +1,13 @@
 -- Train and evaluate the lift risk model (map contract 3). Rerun after each labelling round:
 --   .venv/bin/python sql/run.py sql/train.sql
 
--- Training data: labelled readings only, model features only.
+-- Training data: labelled readings, minus those where Gemma's second-rater label disagrees with the human
+-- (won 74% vs 52% held-out accuracy in sql/teach.sql). Readings Gemma has not rated are kept.
 create or replace view H4H.APP.LIFT_TRAIN as
-select trunk_deg, twist_deg, knee_deg, d_trunk, d_twist, max_trunk_3, label
-from H4H.APP.LIFT_FEATURES
-where label is not null;
+select f.trunk_deg, f.twist_deg, f.knee_deg, f.d_trunk, f.d_twist, f.max_trunk_3, f.label
+from H4H.APP.LIFT_FEATURES f
+left join H4H.APP.GEMMA_LABELS g on g.session_id = f.session_id and g.ts = f.ts
+where f.label is not null and (g.gemma_label is null or g.gemma_label = f.label);
 
 -- Snowflake ML classifier; 'evaluate' holds out part of the data and reports metrics on it.
 create or replace SNOWFLAKE.ML.CLASSIFICATION H4H.APP.LIFT_RISK_MODEL(
