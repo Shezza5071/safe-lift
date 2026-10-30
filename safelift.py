@@ -30,6 +30,7 @@ import reba
 
 ROOT = Path(__file__).parent
 MODEL = ROOT / "models" / "pose_landmarker_lite.task"
+READINGS = ROOT / "snapshots" / "readings"
 ADL = ZoneInfo("Australia/Adelaide")
 SAMPLE_S = 2.0
 TABLES = {
@@ -234,6 +235,7 @@ def main():
     session = uuid.uuid4().hex[:8]
     snaps = ROOT / "snapshots"
     snaps.mkdir(exist_ok=True)
+    READINGS.mkdir(parents=True, exist_ok=True)
     q = queue.Queue()
     writer = threading.Thread(target=sink, args=(q,), daemon=True)
     writer.start()
@@ -287,8 +289,11 @@ def main():
                     print(f"[gemma] question failed: {e}")
 
             if norm and t - last_sample >= SAMPLE_S:
-                q.put(("EVENTS", (session, now_adl(), args.task, round(trunk, 1), round(twist, 1),
+                ts = now_adl()
+                q.put(("EVENTS", (session, ts, args.task, round(trunk, 1), round(twist, 1),
                                   round(knee, 1), band, alarm_in_window, args.staff, label)))
+                # skeleton of every reading, so Gemma can rate it later as a second rater (teach.py)
+                skeleton_png(norm, READINGS / f"{session}_{ts.replace(' ', 'T').replace(':', '')}.png")
                 readings.append({"band": band, "trunk": trunk, "twist": twist, "alarm": alarm_in_window})
                 last_sample, alarm_in_window = t, False
                 recent = (recent + [trunk])[-3:]
