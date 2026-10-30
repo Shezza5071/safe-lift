@@ -1,15 +1,19 @@
 """Safe Lift live coach: MediaPipe watches, REBA bands alarm, readings stream to Snowflake.
 
-Run: .venv/bin/python safelift.py --task bed_to_chair --staff S01   (q quits, d toggles degrees)
-No Snowflake connection -> rows go to data/events.csv instead.
+Run: .venv/bin/python safelift.py --task bed_to_chair --staff S01 --lang Nepali
+Keys: q quits (then the Gemma debrief runs), d toggles degrees, 1-4 answers Gemma's alarm question.
+No Snowflake connection -> rows go to data/<table>.csv instead.
 """
 import argparse
 import csv
+import json
 import queue
 import subprocess
 import threading
 import time
 import uuid
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -19,66 +23,104 @@ import mediapipe as mp
 import numpy as np
 from mediapipe.tasks.python import BaseOptions, vision
 
+import gemma
 import reba
 
 ROOT = Path(__file__).parent
 MODEL = ROOT / "models" / "pose_landmarker_lite.task"
 ADL = ZoneInfo("Australia/Adelaide")
 SAMPLE_S = 2.0
-COLS = ["session_id", "ts", "task", "trunk_deg", "twist_deg", "knee_deg", "reba_band", "alarm", "staff_code"]
+TABLES = {
+    "EVENTS": ["session_id", "ts", "task", "trunk_deg", "twist_deg", "knee_deg", "reba_band", "alarm", "staff_code"],
+    "ALARM_LABELS": ["session_id", "ts", "task", "trunk_deg", "twist_deg", "question", "answer", "source"],
+    "DEBRIEFS": ["session_id", "ts", "task", "language", "summary", "debrief", "citations", "source"],
+}
+DDL = {
+    "EVENTS": "session_id string, ts timestamp_ntz, task string, trunk_deg float, twist_deg float, "
+              "knee_deg float, reba_band string, alarm boolean, staff_code string",
+    "ALARM_LABELS": "session_id string, ts timestamp_ntz, task string, trunk_deg float, twist_deg float, "
+                    "question string, answer string, source string",
+    "DEBRIEFS": "session_id string, ts timestamp_ntz, task string, language string, summary variant, "
+                "debrief string, citations variant, source string",
+}
 COLOURS = {"green": (60, 180, 75), "amber": (0, 165, 255), "red": (40, 40, 220)}
 BONES = [(11, 12), (11, 13), (13, 15), (12, 14), (14, 16), (11, 23), (12, 24), (23, 24),
          (23, 25), (25, 27), (24, 26), (26, 28)]
-DDL = """create table if not exists H4H.APP.EVENTS (
-  session_id string, ts timestamp_ntz, task string, trunk_deg float, twist_deg float,
-  knee_deg float, reba_band string, alarm boolean, staff_code string)"""
 
 
 def now_adl():
     return datetime.now(ADL).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def sink(q):
-    """Background writer: batch rows to Snowflake every SAMPLE_S, or append to CSV if offline."""
-    conn = None
+def connect():
     try:
         import snowflake.connector
         conn = snowflake.connector.connect(connection_name="main")
-        conn.cursor().execute(DDL)
-        print("[sink] Snowflake H4H.APP.EVENTS")
+        for t, cols in DDL.items():
+            conn.cursor().execute(f"create table if not exists H4H.APP.{t} ({cols})")
+        return conn
     except Exception as e:
-        print(f"[sink] Snowflake unavailable ({e.__class__.__name__}), writing data/events.csv")
-    out = ROOT / "data" / "events.csv"
+        print(f"[snowflake] unavailable ({e.__class__.__name__}), using data/*.csv")
+        return None
+
+
+def write(conn, table, rows):
+    cols = TABLES[table]
+    if conn:
+        try:
+            # variant columns need parse_json, so insert via select
+            sel = ",".join(f"parse_json(column{i + 1})" if c in ("summary", "citations") else f"column{i + 1}"
+                           for i, c in enumerate(cols))
+            vals = ",".join(["(" + ",".join(["%s"] * len(cols)) + ")"] * len(rows))
+            conn.cursor().execute(f"insert into H4H.APP.{table} ({','.join(cols)}) select {sel} from values {vals}",
+                                  [v for r in rows for v in r])
+            return
+        except Exception as e:
+            print(f"[snowflake] insert into {table} failed ({e}), CSV for this batch")
+    out = ROOT / "data" / f"{table.lower()}.csv"
     out.parent.mkdir(exist_ok=True)
+    new = not out.exists()
+    with out.open("a", newline="") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(cols)
+        w.writerows(rows)
+
+
+def sink(q):
+    """Background writer: batch (table, row) items every SAMPLE_S. None stops it."""
+    conn = connect()
     stop = False
     while not stop:
-        rows = []
+        items = []
         try:
-            rows.append(q.get(timeout=SAMPLE_S))
+            items.append(q.get(timeout=SAMPLE_S))
             while True:
-                rows.append(q.get_nowait())
+                items.append(q.get_nowait())
         except queue.Empty:
             pass
-        if None in rows:
-            stop = True
-            rows = [r for r in rows if r is not None]
-        if not rows:
-            continue
-        if conn:
-            try:
-                conn.cursor().executemany(
-                    f"insert into H4H.APP.EVENTS ({','.join(COLS)}) values ({','.join(['%s'] * len(COLS))})", rows)
-                continue
-            except Exception as e:
-                print(f"[sink] insert failed ({e}), falling back to CSV for this batch")
-        new = not out.exists()
-        with out.open("a", newline="") as f:
-            w = csv.writer(f)
-            if new:
-                w.writerow(COLS)
-            w.writerows(rows)
+        stop = None in items
+        by_table = {}
+        for it in filter(None, items):
+            by_table.setdefault(it[0], []).append(it[1])
+        for table, rows in by_table.items():
+            write(conn, table, rows)
     if conn:
         conn.close()
+
+
+def guidance(query, k=3):
+    """Top official-guidance chunks from Cortex Search; [] if Snowflake is unavailable."""
+    try:
+        import snowflake.connector
+        with snowflake.connector.connect(connection_name="main") as conn:
+            raw = conn.cursor().execute(
+                "select snowflake.cortex.search_preview('H4H.APP.GUIDANCE_SEARCH', %s)",
+                (json.dumps({"query": query, "columns": ["source", "chunk"], "limit": k}),)).fetchone()[0]
+        return [{"source": r["source"], "text": r["chunk"]} for r in json.loads(raw)["results"]]
+    except Exception as e:
+        print(f"[guidance] Cortex Search unavailable ({e.__class__.__name__})")
+        return []
 
 
 def beep():
@@ -96,7 +138,22 @@ def skeleton_png(norm, path, size=480):
     cv2.imwrite(str(path), img)
 
 
-def draw(frame, norm, band, trunk, twist, show_deg):
+def ascii_(s):
+    return s.encode("ascii", "replace").decode()  # cv2.putText draws ASCII only
+
+
+def wrap(text, width=60):
+    lines, cur = [], ""
+    for word in text.split():
+        if len(cur) + len(word) + 1 > width:
+            lines.append(cur)
+            cur = word
+        else:
+            cur = f"{cur} {word}".strip()
+    return lines + [cur] if cur else lines
+
+
+def draw(frame, norm, band, trunk, twist, show_deg, ask=None, status=""):
     h, w = frame.shape[:2]
     col = COLOURS[band]
     if norm:
@@ -110,12 +167,52 @@ def draw(frame, norm, band, trunk, twist, show_deg):
     if show_deg and norm:
         cv2.putText(frame, f"trunk {trunk:.0f}  twist {twist:.0f}", (20, h - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    if status:
+        cv2.putText(frame, status, (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    if ask:  # Gemma's question panel, answered with keys 1-4
+        q, src = ask["data"], ask["source"]
+        lines = [f"GEMMA ASKS{' (cached)' if src == 'cache' else ''}:"] + wrap(ascii_(q["question"]))
+        lines += [f"  {i + 1}. {ascii_(o)}" for i, o in enumerate(q["options"][:4])]
+        top = h - 30 * len(lines) - 30
+        cv2.rectangle(frame, (10, top - 10), (w - 10, h - 10), (30, 30, 30), -1)
+        for i, line in enumerate(lines):
+            cv2.putText(frame, line, (25, top + 22 + 30 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+
+def run_debrief(session, task, lang, readings, labels, q):
+    """Session-end debrief: summary + Cortex Search guidance -> Gemma, saved for the dashboard."""
+    if not readings:
+        print("No readings, no debrief.")
+        return
+    bands = Counter(r["band"] for r in readings)
+    worst = max(readings, key=lambda r: r["trunk"])
+    summary = {
+        "task": task, "readings": len(readings),
+        "pct_time": {b: round(100 * n / len(readings)) for b, n in bands.items()},
+        "red_alarms": sum(1 for r in readings if r["alarm"]),
+        "worst_moment": {"trunk_deg": round(worst["trunk"]), "twist_deg": round(worst["twist"])},
+        "trainee_said": [lb["answer"] for lb in labels],
+    }
+    query = f"{task.replace('_', ' ')} manual handling bending twisting " + " ".join(summary["trainee_said"])
+    cites = guidance(query)
+    print(f"\nDebrief ({lang}) for session {session}, asking Gemma...")
+    try:
+        text, src = gemma.debrief(summary, cites, lang)
+    except Exception as e:
+        print(f"Debrief failed: {e}")
+        return
+    print(("[cached] " if src == "cache" else "") + text)
+    for i, c in enumerate(cites):
+        print(f"  [{i + 1}] {c['source']}")
+    q.put(("DEBRIEFS", (session, now_adl(), task, lang, json.dumps(summary, ensure_ascii=False), text,
+                        json.dumps([c["source"] for c in cites]), src)))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--task", default="bed_to_chair")
     ap.add_argument("--staff", default="S01", help="anonymous staff code, never a name")
+    ap.add_argument("--lang", default="English", help="debrief language, e.g. Nepali, Vietnamese")
     ap.add_argument("--camera", type=int, default=0)
     args = ap.parse_args()
 
@@ -125,6 +222,7 @@ def main():
     q = queue.Queue()
     writer = threading.Thread(target=sink, args=(q,), daemon=True)
     writer.start()
+    pool = ThreadPoolExecutor(max_workers=2)  # Gemma calls never block the camera loop
 
     opts = vision.PoseLandmarkerOptions(base_options=BaseOptions(model_asset_path=str(MODEL)),
                                         running_mode=vision.RunningMode.VIDEO)
@@ -132,8 +230,10 @@ def main():
     scorer = reba.Scorer()
     band, trunk, twist, knee = "green", 0.0, 0.0, 180.0
     was_alarm, alarm_in_window, last_sample, show_deg = False, False, 0.0, False
+    pending, ask, status = None, None, ""
+    readings, labels = [], []
     t0 = time.monotonic()
-    print(f"session {session} task={args.task} staff={args.staff}")
+    print(f"session {session} task={args.task} staff={args.staff} lang={args.lang}")
 
     with vision.PoseLandmarker.create_from_options(opts) as pose:
         while True:
@@ -150,29 +250,51 @@ def main():
                 trunk, twist, band, alarm = scorer.update(tr_raw, tw_raw, t)
                 if alarm and not was_alarm:  # alarm onset
                     beep()
-                    skeleton_png(norm, snaps / f"{session}_{int(t)}.png")
+                    snap = snaps / f"{session}_{int(t)}.png"
+                    skeleton_png(norm, snap)
+                    if pending is None and ask is None:  # one question at a time
+                        pending = (pool.submit(gemma.alarm_question, snap, args.task, trunk, twist), trunk, twist)
+                        status = "Gemma is looking at the skeleton..."
                 was_alarm = alarm
                 alarm_in_window |= alarm
             else:
                 norm = None
 
+            if pending and pending[0].done():
+                fut, a_tr, a_tw = pending
+                pending, status = None, ""
+                try:
+                    data, src = fut.result()
+                    ask = {"data": data, "source": src, "trunk": a_tr, "twist": a_tw}
+                except Exception as e:
+                    print(f"[gemma] question failed: {e}")
+
             if norm and t - last_sample >= SAMPLE_S:
-                q.put((session, now_adl(), args.task, round(trunk, 1), round(twist, 1), round(knee, 1),
-                       band, alarm_in_window, args.staff))
+                q.put(("EVENTS", (session, now_adl(), args.task, round(trunk, 1), round(twist, 1),
+                                  round(knee, 1), band, alarm_in_window, args.staff)))
+                readings.append({"band": band, "trunk": trunk, "twist": twist, "alarm": alarm_in_window})
                 last_sample, alarm_in_window = t, False
 
-            draw(frame, norm, band, trunk, twist, show_deg)
+            draw(frame, norm, band, trunk, twist, show_deg, ask, status)
             cv2.imshow("Safe Lift", frame)
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
             if key == ord("d"):
                 show_deg = not show_deg
+            if ask and ord("1") <= key <= ord("4"):
+                answer = ask["data"]["options"][key - ord("1")]
+                labels.append({"answer": answer})
+                q.put(("ALARM_LABELS", (session, now_adl(), args.task, round(ask["trunk"], 1),
+                                        round(ask["twist"], 1), ask["data"]["question"], answer, ask["source"])))
+                ask = None
 
     cam.release()
     cv2.destroyAllWindows()
+    run_debrief(session, args.task, args.lang, readings, labels, q)
     q.put(None)
-    writer.join(timeout=10)
+    writer.join(timeout=15)
+    pool.shutdown(wait=False, cancel_futures=True)
 
 
 if __name__ == "__main__":

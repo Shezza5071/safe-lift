@@ -38,6 +38,21 @@ st.subheader("Trunk angle, current session (bands, not exact degrees: ±5 to 10�
 trace = q(f"select ts, trunk_deg, twist_deg from H4H.APP.EVENTS where session_id='{cur['SESSION_ID']}' order by ts")
 st.line_chart(trace, x="TS", y=["TRUNK_DEG", "TWIST_DEG"])
 
+deb = q("""select session_id, ts, language, debrief, citations, source from H4H.APP.DEBRIEFS
+  order by ts desc limit 1""")
+if not deb.empty:
+    d = deb.iloc[0]
+    st.subheader(f"Gemma debrief ({d['LANGUAGE']}, session {d['SESSION_ID']})"
+                 + (" · cached" if d["SOURCE"] == "cache" else ""))
+    st.info(d["DEBRIEF"])
+    st.caption("Sources (Cortex Search): " + "; ".join(
+        f"[{i + 1}] {c}" for i, c in enumerate(__import__("json").loads(d["CITATIONS"]))))
+
+lab = q("""select answer, count(*) n from H4H.APP.ALARM_LABELS group by 1 order by 2 desc""")
+if not lab.empty:
+    st.subheader("Why red alarms happened (trainee answers to Gemma)")
+    st.bar_chart(lab, x="ANSWER", y="N")
+
 st.subheader("Alarms by task (look at the task and plan, not the person)")
 st.bar_chart(q("""select task, sum(iff(alarm,1,0)) alarms, count(*) readings
   from H4H.APP.EVENTS group by 1 order by 2 desc"""), x="TASK", y="ALARMS")
