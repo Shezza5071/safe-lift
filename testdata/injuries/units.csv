@@ -1,0 +1,10 @@
+site,unit,beds,ceiling_hoists,mobile_hoists,standing_hoists
+Site A,A1 memory support,28,4,1,1
+Site A,A2 general care,32,3,2,3
+Site A,A3 high care,20,4,1,1
+Site B,B1 memory support,30,4,2,1
+Site B,B2 general care,36,3,2,3
+Site B,B3 high care,24,4,2,2
+Site C,C1 memory support,22,2,1,1
+Site C,C2 general care,28,1,2,2
+Site C,C3 high care,20,1,1,1
