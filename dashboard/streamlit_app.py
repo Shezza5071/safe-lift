@@ -151,6 +151,23 @@ with tab_ml:
                 'rater; readings where they disagree are dropped. A Snowflake ML classifier learns from the cleaned '
                 'labels and scores every reading live (the purple badge in the camera window).</div>',
                 unsafe_allow_html=True)
+    # Danny's agreement tiles (Dashboard ML tiles #10). MODEL_EVAL is a snapshot from the last sql/train.sql run.
+    agree = q_or_none("""select session_id, count(*) n, round(100*avg(iff(rule_bad = ml_bad, 1, 0))) pct_agree,
+      sum(iff(ml_bad, 1, 0)) ml_flags, sum(iff(rule_bad, 1, 0)) rule_flags
+      from H4H.APP.MODEL_EVAL group by 1 order by max(ts) desc limit 1""")
+    allr = q_or_none("""select count(*) n, round(100*avg(iff(rule_bad = ml_bad, 1, 0))) pct_agree
+      from H4H.APP.MODEL_EVAL""")
+    if allr is not None and allr["N"][0]:
+        a = st.columns(2)
+        if agree is not None and not agree.empty and pd.notna(agree["PCT_AGREE"][0]):
+            card(a[0], f"ML vs REBA agreement, latest scored session ({agree['SESSION_ID'][0]})",
+                 f"{agree['PCT_AGREE'][0]:.0f}%",
+                 f"ML flags {int(agree['ML_FLAGS'][0])} · REBA red {int(agree['RULE_FLAGS'][0])}", "#38bdf8")
+        card(a[1], "ML vs REBA agreement, all readings",
+             f"{allr['PCT_AGREE'][0]:.0f}%" if pd.notna(allr["PCT_AGREE"][0]) else "n/a",
+             f"{int(allr['N'][0])} readings · the ML flag is a badge only; the beep follows REBA", "#38bdf8")
+        st.markdown("&nbsp;", unsafe_allow_html=True)
+
     compare = q_or_none("""select rater, ord, test_readings, accuracy_pct, bad_caught_pct, flags_correct_pct,
                            v1_train_rows, v2_train_rows from H4H.APP.MODEL_COMPARE order by ord""")
     if compare is not None and not compare.empty:
