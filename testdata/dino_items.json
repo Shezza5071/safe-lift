@@ -1,0 +1,98 @@
+[
+  {
+    "id": "P1_patient_encouraged",
+    "phase": "preparation",
+    "scale": "0/1",
+    "description": "Patient encouraged to cooperate"
+  },
+  {
+    "id": "P2_adequate_space",
+    "phase": "preparation",
+    "scale": "0/1",
+    "description": "Adequate space for the transfer"
+  },
+  {
+    "id": "P3_objects_positioned_locked",
+    "phase": "preparation",
+    "scale": "0/1",
+    "description": "Wheelchair, bed and surrounding objects positioned and brakes locked"
+  },
+  {
+    "id": "P4_bed_height_correct",
+    "phase": "preparation",
+    "scale": "0/1",
+    "description": "Bed at correct working height"
+  },
+  {
+    "id": "P5_aid_used",
+    "phase": "preparation",
+    "scale": "0/1",
+    "description": "Transfer aid in the plan was used"
+  },
+  {
+    "id": "P6_aid_used_correctly",
+    "phase": "preparation",
+    "scale": "0/1",
+    "description": "Transfer aid used correctly"
+  },
+  {
+    "id": "P7_adequate_staffing",
+    "phase": "preparation",
+    "scale": "0/1",
+    "description": "Staffing matches the plan"
+  },
+  {
+    "id": "Q1_balance",
+    "phase": "performance",
+    "scale": "0,0.25,0.5,0.75,1",
+    "description": "Worker balance"
+  },
+  {
+    "id": "Q2_coordination",
+    "phase": "performance",
+    "scale": "0,0.25,0.5,0.75,1",
+    "description": "Coordination between staff"
+  },
+  {
+    "id": "Q3_movement_economy",
+    "phase": "performance",
+    "scale": "0,0.25,0.5,0.75,1",
+    "description": "Economy of movement"
+  },
+  {
+    "id": "Q4_load_back_shoulders",
+    "phase": "performance",
+    "scale": "0,0.25,0.5,0.75,1",
+    "description": "Load on back and shoulders (Safe Lift pose data informs this)"
+  },
+  {
+    "id": "Q5_communication",
+    "phase": "performance",
+    "scale": "0,0.25,0.5,0.75,1",
+    "description": "Communication and interaction with the patient"
+  },
+  {
+    "id": "Q6_patient_participation",
+    "phase": "performance",
+    "scale": "0,0.25,0.5,0.75,1",
+    "description": "Patient allowed to participate to their ability"
+  },
+  {
+    "id": "R1_no_pain",
+    "phase": "result",
+    "scale": "0/1",
+    "description": "Transfer caused the patient no pain"
+  },
+  {
+    "id": "R2_no_fear",
+    "phase": "result",
+    "scale": "0/1",
+    "description": "Transfer caused the patient no fear or uncertainty"
+  },
+  {
+    "id": "R3_functional_end_position",
+    "phase": "result",
+    "scale": "0/1",
+    "description": "Patient finishes in a functional position"
+  }
+]

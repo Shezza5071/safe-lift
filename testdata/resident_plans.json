@@ -1,0 +1,224 @@
+[
+  {
+    "resident_id": "R01",
+    "label": "SYNTHETIC",
+    "mobility_category": "non_cooperative",
+    "weight_bearing": "none",
+    "staff_required": 2,
+    "required_aids": [
+      "ceiling_hoist",
+      "sling_full_body"
+    ],
+    "transfer_methods": {
+      "bed_to_chair": "full_body_hoist",
+      "reposition_in_bed": "slide_sheet_2_staff"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Dense right hemiplegia; no weight bearing",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R02",
+    "label": "SYNTHETIC",
+    "mobility_category": "non_cooperative",
+    "weight_bearing": "none",
+    "staff_required": 2,
+    "required_aids": [
+      "mobile_hoist",
+      "sling_full_body",
+      "slide_sheet"
+    ],
+    "transfer_methods": {
+      "bed_to_chair": "full_body_hoist",
+      "reposition_in_bed": "slide_sheet_2_staff"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Advanced dementia; may resist; explain each step",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R03",
+    "label": "SYNTHETIC",
+    "mobility_category": "non_cooperative",
+    "weight_bearing": "none",
+    "staff_required": 2,
+    "required_aids": [
+      "mobile_hoist",
+      "sling_full_body",
+      "slide_sheet"
+    ],
+    "transfer_methods": {
+      "bed_to_chair": "full_body_hoist",
+      "reposition_in_bed": "slide_sheet_2_staff"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Bariatric bed; check sling size L",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R04",
+    "label": "SYNTHETIC",
+    "mobility_category": "partially_cooperative",
+    "weight_bearing": "partial",
+    "staff_required": 2,
+    "required_aids": [
+      "standing_hoist",
+      "slide_sheet"
+    ],
+    "transfer_methods": {
+      "sit_to_stand": "standing_hoist",
+      "bed_to_chair": "standing_hoist",
+      "reposition_in_bed": "slide_sheet_2_staff"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Can hold handles; fatigues after 2 min",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R05",
+    "label": "SYNTHETIC",
+    "mobility_category": "partially_cooperative",
+    "weight_bearing": "partial",
+    "staff_required": 2,
+    "required_aids": [
+      "standing_hoist",
+      "slide_sheet"
+    ],
+    "transfer_methods": {
+      "sit_to_stand": "standing_hoist",
+      "chair_to_toilet": "standing_hoist",
+      "reposition_in_bed": "slide_sheet_2_staff"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Parkinson's freezing; use verbal cueing",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R06",
+    "label": "SYNTHETIC",
+    "mobility_category": "partially_cooperative",
+    "weight_bearing": "partial",
+    "staff_required": 1,
+    "required_aids": [
+      "sit_to_stand_aid",
+      "transfer_belt"
+    ],
+    "transfer_methods": {
+      "sit_to_stand": "sit_to_stand_aid",
+      "chair_to_toilet": "sit_to_stand_aid"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Stand-and-pivot aid only; no manual lift",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R07",
+    "label": "SYNTHETIC",
+    "mobility_category": "partially_cooperative",
+    "weight_bearing": "partial",
+    "staff_required": 2,
+    "required_aids": [
+      "slide_board",
+      "transfer_belt",
+      "slide_sheet"
+    ],
+    "transfer_methods": {
+      "bed_to_chair": "slide_board",
+      "reposition_in_bed": "slide_sheet_2_staff"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Below-knee amputation; slide board transfers",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R08",
+    "label": "SYNTHETIC",
+    "mobility_category": "independent_supervision",
+    "weight_bearing": "full",
+    "staff_required": 1,
+    "required_aids": [
+      "walking_frame"
+    ],
+    "transfer_methods": {
+      "sit_to_stand": "supervise_only",
+      "chair_to_toilet": "supervise_only"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Prompt to use frame; no hands-on assist",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R09",
+    "label": "SYNTHETIC",
+    "mobility_category": "independent_supervision",
+    "weight_bearing": "full",
+    "staff_required": 1,
+    "required_aids": [
+      "walking_frame",
+      "raised_toilet_seat"
+    ],
+    "transfer_methods": {
+      "sit_to_stand": "supervise_only",
+      "chair_to_toilet": "supervise_only"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Falls risk at night; sensor mat",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R10",
+    "label": "SYNTHETIC",
+    "mobility_category": "partially_cooperative",
+    "weight_bearing": "partial",
+    "staff_required": 2,
+    "required_aids": [
+      "standing_hoist",
+      "slide_sheet"
+    ],
+    "transfer_methods": {
+      "sit_to_stand": "standing_hoist",
+      "bed_to_chair": "standing_hoist",
+      "reposition_in_bed": "slide_sheet_2_staff"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Post-hip fracture; weight bearing as tolerated",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R11",
+    "label": "SYNTHETIC",
+    "mobility_category": "non_cooperative",
+    "weight_bearing": "none",
+    "staff_required": 2,
+    "required_aids": [
+      "ceiling_hoist",
+      "sling_full_body",
+      "slide_sheet"
+    ],
+    "transfer_methods": {
+      "bed_to_chair": "full_body_hoist",
+      "reposition_in_bed": "slide_sheet_2_staff"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Contractures; pressure care 2-hourly",
+    "plan_review_due": "2026-12-01"
+  },
+  {
+    "resident_id": "R12",
+    "label": "SYNTHETIC",
+    "mobility_category": "partially_cooperative",
+    "weight_bearing": "partial",
+    "staff_required": 1,
+    "required_aids": [
+      "sit_to_stand_aid",
+      "walking_frame"
+    ],
+    "transfer_methods": {
+      "sit_to_stand": "sit_to_stand_aid",
+      "chair_to_toilet": "sit_to_stand_aid"
+    },
+    "manual_lift_permitted": false,
+    "notes": "Good upper body strength",
+    "plan_review_due": "2026-12-01"
+  }
+]

@@ -1,0 +1,4 @@
+unit,label,beds,non_cooperative,partially_cooperative,staff_day,staff_evening,staff_night,ceiling_hoists,mobile_hoists,standing_hoists,hoists_serviceable,slide_sheets_per_bed,wheelchairs_unsuitable_pct,bathroom_space_inadequate,staff_trained_last_12m_pct
+U1_memory_support,SYNTHETIC,24,9,8,6,5,2,4,1,1,5,1.0,30,yes,70
+U2_general_care,SYNTHETIC,30,5,12,7,6,3,2,2,3,7,1.0,10,no,90
+U3_high_care,SYNTHETIC,20,12,5,6,5,2,1,1,1,2,0.5,45,yes,50

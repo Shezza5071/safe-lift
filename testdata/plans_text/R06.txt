@@ -1,0 +1,10 @@
+MANUAL HANDLING PLAN  (SYNTHETIC - training use only)
+Resident: R06
+Mobility: partially cooperative; weight bearing: partial
+Staff required for all transfers: 1
+Equipment: sit to stand aid, transfer belt
+  sit to stand: sit to stand aid
+  chair to toilet: sit to stand aid
+Manual lifting of this resident is NOT permitted.
+Notes: Stand-and-pivot aid only; no manual lift
+Review due: 2026-12-01
