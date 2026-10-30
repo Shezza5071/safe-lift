@@ -41,3 +41,14 @@ def test_demo_plans_read_from_cache_offline(monkeypatch):
         assert src == "cache"
         assert rules[p.stem]["staff_required"] >= 1 and rules[p.stem]["equipment"]
     assert rules["plan_bed_to_chair"]["staff_required"] == 2  # the demo plan: hoist + 2 staff
+
+
+@pytest.mark.parametrize("path, kind", [("demo/room_1.jpg", "image/jpeg"), ("x.JPEG", "image/jpeg"),
+                                        ("snap.png", "image/png"), ("p.webp", "image/webp")])
+def test_image_type_follows_extension(path, kind):
+    assert gemma.mime(path) == kind
+
+
+def test_unsupported_image_type_fails_early():
+    with pytest.raises(ValueError):
+        gemma.mime("plan.pdf")
