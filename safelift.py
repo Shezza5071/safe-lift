@@ -1,7 +1,8 @@
 """Safe Lift live coach: MediaPipe watches, REBA bands alarm, readings stream to Snowflake.
 
 Run: .venv/bin/python safelift.py --task bed_to_chair --staff S01 --lang Nepali
-Keys: q quits (then the Gemma debrief runs), d toggles degrees, 1-4 answers Gemma's alarm question.
+Keys: q quits (then the Gemma debrief runs), d toggles degrees, 1-4 answers Gemma's alarm question,
+g / b / n label the lift being performed now as good / bad / unlabelled (training data for the ML model).
 No Snowflake connection -> rows go to data/<table>.csv instead.
 """
 import argparse
@@ -31,13 +32,14 @@ MODEL = ROOT / "models" / "pose_landmarker_lite.task"
 ADL = ZoneInfo("Australia/Adelaide")
 SAMPLE_S = 2.0
 TABLES = {
-    "EVENTS": ["session_id", "ts", "task", "trunk_deg", "twist_deg", "knee_deg", "reba_band", "alarm", "staff_code"],
+    "EVENTS": ["session_id", "ts", "task", "trunk_deg", "twist_deg", "knee_deg", "reba_band", "alarm", "staff_code",
+               "label"],
     "ALARM_LABELS": ["session_id", "ts", "task", "trunk_deg", "twist_deg", "question", "answer", "source"],
     "DEBRIEFS": ["session_id", "ts", "task", "language", "summary", "debrief", "citations", "source"],
 }
 DDL = {
     "EVENTS": "session_id string, ts timestamp_ntz, task string, trunk_deg float, twist_deg float, "
-              "knee_deg float, reba_band string, alarm boolean, staff_code string",
+              "knee_deg float, reba_band string, alarm boolean, staff_code string, label string",
     "ALARM_LABELS": "session_id string, ts timestamp_ntz, task string, trunk_deg float, twist_deg float, "
                     "question string, answer string, source string",
     "DEBRIEFS": "session_id string, ts timestamp_ntz, task string, language string, summary variant, "
@@ -58,6 +60,7 @@ def connect():
         conn = snowflake.connector.connect(connection_name="main")
         for t, cols in DDL.items():
             conn.cursor().execute(f"create table if not exists H4H.APP.{t} ({cols})")
+        conn.cursor().execute("alter table H4H.APP.EVENTS add column if not exists label string")  # pre-label tables
         return conn
     except Exception as e:
         print(f"[snowflake] unavailable ({e.__class__.__name__}), using data/*.csv")
@@ -153,8 +156,13 @@ def wrap(text, width=60):
     return lines + [cur] if cur else lines
 
 
-def draw(frame, norm, band, trunk, twist, show_deg, ask=None, status=""):
+def draw(frame, norm, band, trunk, twist, show_deg, ask=None, status="", label=None):
     h, w = frame.shape[:2]
+    if label:  # labelling mode: make the current label impossible to miss
+        lc = COLOURS["green"] if label == "good" else COLOURS["red"]
+        cv2.rectangle(frame, (w - 300, 80), (w - 10, 150), lc, -1)
+        cv2.putText(frame, f"LABEL: {label.upper()}", (w - 285, 128), cv2.FONT_HERSHEY_SIMPLEX, 1.1,
+                    (255, 255, 255), 3)
     col = COLOURS[band]
     if norm:
         pts = {i: (int(p.x * w), int(p.y * h)) for i, p in enumerate(norm)}
@@ -230,7 +238,7 @@ def main():
     scorer = reba.Scorer()
     band, trunk, twist, knee = "green", 0.0, 0.0, 180.0
     was_alarm, alarm_in_window, last_sample, show_deg = False, False, 0.0, False
-    pending, ask, status = None, None, ""
+    pending, ask, status, label = None, None, "", None
     readings, labels = [], []
     t0 = time.monotonic()
     print(f"session {session} task={args.task} staff={args.staff} lang={args.lang}")
@@ -271,17 +279,19 @@ def main():
 
             if norm and t - last_sample >= SAMPLE_S:
                 q.put(("EVENTS", (session, now_adl(), args.task, round(trunk, 1), round(twist, 1),
-                                  round(knee, 1), band, alarm_in_window, args.staff)))
+                                  round(knee, 1), band, alarm_in_window, args.staff, label)))
                 readings.append({"band": band, "trunk": trunk, "twist": twist, "alarm": alarm_in_window})
                 last_sample, alarm_in_window = t, False
 
-            draw(frame, norm, band, trunk, twist, show_deg, ask, status)
+            draw(frame, norm, band, trunk, twist, show_deg, ask, status, label)
             cv2.imshow("Safe Lift", frame)
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
             if key == ord("d"):
                 show_deg = not show_deg
+            if key in (ord("g"), ord("b"), ord("n")):  # labeller marks the lift being performed now
+                label = {ord("g"): "good", ord("b"): "bad", ord("n"): None}[key]
             if ask and ord("1") <= key <= ord("4"):
                 answer = ask["data"]["options"][key - ord("1")]
                 labels.append({"answer": answer})
