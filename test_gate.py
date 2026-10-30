@@ -40,6 +40,7 @@ def test_demo_plans_read_from_cache_offline(monkeypatch):
         rules[p.stem], src = gate.read_plan(p)
         assert src == "cache"
         assert rules[p.stem]["staff_required"] >= 1
+        assert rules[p.stem]["equipment"] or p.stem == "plan_demo_two_staff"  # only the demo plan needs none
     assert rules["plan_bed_to_chair"]["staff_required"] == 2  # the demo plan: hoist + 2 staff
 
 
@@ -76,6 +77,7 @@ def test_demo_rooms_gate_from_cache_offline(monkeypatch, room, allowed):
     ([{"name": "allow_task", "args": {}}], True, "Plan met"),
     ([{"name": "block_task", "args": {"reason": "Plan says 2 staff, 1 seen"}}], False, "Plan says 2 staff, 1 seen"),
     ([], False, "No verdict from Gemma: check the room by hand"),
+    ([{"name": "allow_task", "args": {}}, {"name": "block_task", "args": {"reason": "No hoist"}}], False, "No hoist"),
 ])
 def test_check_room_verdicts_fail_closed(monkeypatch, verdict, allowed, reason):
     replies = iter([([{"name": "set_checklist", "args": {"items": ["2 staff: 2 seen"]}}], "live"), (verdict, "live")])
@@ -98,3 +100,22 @@ def test_draw_gate_panel_draws_on_frame():
     gate.draw_gate_panel(frame, {"allowed": False, "reason": "Plan says 2 staff, 1 seen", "source": "cache",
                                  "calls": [{"name": "block_task", "args": {"reason": "x"}}]})
     assert frame[100, 10].tolist() == [40, 40, 220]  # red banner
+
+
+def test_check_room_blocks_on_low_staff_count_even_if_gemma_allows(monkeypatch):
+    replies = iter([([{"name": "set_checklist", "args": {"items": ["2 staff: 1 seen"]}}], "live"),
+                    ([{"name": "allow_task", "args": {}}], "live")])
+    monkeypatch.setattr(gemma, "gemma", lambda *a, **k: next(replies))
+    result = gate.check_room("room.jpg", GOOD)
+    assert (result["allowed"], result["reason"]) == (False, "Plan says 2 staff, 1 seen")
+
+
+def test_check_room_blocks_without_checklist(monkeypatch):
+    replies = iter([([], "live"), ([{"name": "allow_task", "args": {}}], "live")])
+    monkeypatch.setattr(gemma, "gemma", lambda *a, **k: next(replies))
+    assert gate.check_room("room.jpg", GOOD)["allowed"] is False
+
+
+def test_check_room_blocks_on_missing_photo():
+    result = gate.check_room("demo/no_such_room.jpg", GOOD)
+    assert result["allowed"] is False and result["source"] == "error"

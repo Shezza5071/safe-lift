@@ -10,6 +10,7 @@ Run from the repo root:
   .venv/bin/python gate.py room PLAN ROOM [...]   check room photos against a plan (panel previews in snapshots/)
 """
 import json
+import re
 import sys
 import textwrap
 from pathlib import Path
@@ -57,60 +58,77 @@ def read_plan(image_path):
     return check_rules(rules), src
 
 
-def _fn(name, description, **params):
+def _declare(name, description, **params):
     schema = types.Schema(type="OBJECT", properties=params, required=list(params)) if params else None
     return types.FunctionDeclaration(name=name, description=description, parameters=schema)
 
 
 CHECKLIST_TOOLS = [types.Tool(function_declarations=[
-    _fn("set_checklist", "Show the trainer the setup checklist, one line per plan requirement with what you see.",
+    _declare("set_checklist", "Show the trainer the setup checklist, one line per plan requirement with what you see.",
         items=types.Schema(type="ARRAY", items=types.Schema(type="STRING"))),
 ])]
 VERDICT_TOOLS = [types.Tool(function_declarations=[
-    _fn("block_task", "Block the lift because the room does not meet the plan.", reason=types.Schema(type="STRING")),
-    _fn("allow_task", "Allow the lift because every plan requirement is met."),
+    _declare("block_task", "Block the lift because the room does not meet the plan.", reason=types.Schema(type="STRING")),
+    _declare("allow_task", "Allow the lift because every plan requirement is met."),
 ])]
 
-ROOM = """You are the setup gate for a care-worker training lift. The image is the training room.
+ROOM_CONTEXT = """You are the setup gate for a care-worker training lift. The image is the training room.
 The resident's manual handling plan requires: {rules}
 Training props stand in for the real thing (e.g. a box as the bed, a towel as the slide sheet)."""
 
-CHECKLIST_PROMPT = ROOM + """
+CHECKLIST_PROMPT = ROOM_CONTEXT + """
 Count the staff: adults standing ready to do the transfer. Look for each item in "equipment" only;
 do not add requirements the plan does not list. Call set_checklist with one short line per requirement,
 e.g. ["2 staff: 1 seen", "slide sheet: seen"]."""
 
-VERDICT_PROMPT = ROOM + """
+VERDICT_PROMPT = ROOM_CONTEXT + """
 Your checklist for this room: {checklist}
 Decide from the checklist only: the requirements are staff_required and the equipment list, nothing else
 (the task name and the room's furniture are not requirements). Call block_task with a short reason naming what is missing (e.g. "Plan says 2 staff, 1 seen"),
 or allow_task if every requirement is met. If you are unsure, block."""
 
 
-def _first(calls, *names):
-    return next((c for c in calls if c["name"] in names), None)
+def _named(calls, name):
+    return next((c for c in calls if c["name"] == name), None)
+
+
+def _staff_seen(checklist):
+    """Staff count Gemma reported, from a line like "2 staff: 1 seen"; None if there is no such line."""
+    for item in checklist:
+        m = re.search(r"staff\D*?(\d+)\s*seen", item, re.I)
+        if m:
+            return int(m.group(1))
+    return None
 
 
 def check_room(room_image, rules):
     """Gemma checks a room photo against plan rules in two function-calling turns (checklist, then verdict).
 
-    Gemma makes one call per turn, so the verdict turn is given the checklist. Fails closed: no verdict means blocked.
+    Gemma makes one call per turn, so the verdict turn is given the checklist. Fails closed: no checklist, no verdict,
+    any block_task, too few staff in the checklist, or any error means blocked.
     """
     plan = json.dumps(rules)
     try:
         calls, src1 = gemma.gemma(CHECKLIST_PROMPT.format(rules=plan), room_image, tools=CHECKLIST_TOOLS)
-        checklist = (_first(calls, "set_checklist") or {"args": {}})["args"].get("items", [])
+        checklist = (_named(calls, "set_checklist") or {"args": {}})["args"].get("items") or []
+        if not checklist:
+            return {"allowed": False, "reason": "No checklist from Gemma: check the room by hand", "calls": calls,
+                    "source": src1}
         verdict, src2 = gemma.gemma(VERDICT_PROMPT.format(rules=plan, checklist=json.dumps(checklist)), room_image,
                                     tools=VERDICT_TOOLS)
-    except RuntimeError as e:  # no network and no cache
+    except Exception as e:  # no network and no cache, missing photo, unsupported image type
         return {"allowed": False, "reason": f"Setup check failed: {e}", "calls": [], "source": "error"}
     calls += verdict
     src = "cache" if "cache" in (src1, src2) else "live"
-    call = _first(verdict, "block_task", "allow_task")
-    if call and call["name"] == "allow_task":
+    seen = _staff_seen(checklist)
+    if seen is not None and seen < rules["staff_required"]:  # never allow on a staff count below the plan
+        return {"allowed": False, "reason": f"Plan says {rules['staff_required']} staff, {seen} seen", "calls": calls,
+                "source": src}
+    block = _named(verdict, "block_task")
+    if block:
+        return {"allowed": False, "reason": block["args"].get("reason") or "Plan not met", "calls": calls, "source": src}
+    if _named(verdict, "allow_task"):
         return {"allowed": True, "reason": "Plan met", "calls": calls, "source": src}
-    if call:
-        return {"allowed": False, "reason": call["args"].get("reason") or "Plan not met", "calls": calls, "source": src}
     return {"allowed": False, "reason": "No verdict from Gemma: check the room by hand", "calls": calls, "source": src}
 
 
