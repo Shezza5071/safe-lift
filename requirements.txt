@@ -3,3 +3,4 @@ opencv-python
 snowflake-connector-python
 google-genai
 pytest
+pillow

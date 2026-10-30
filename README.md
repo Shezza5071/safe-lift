@@ -25,6 +25,8 @@ mkdir -p models && curl -sSL -o models/pose_landmarker_lite.task \
 | `reba.py` | REBA trunk bands from pose landmarks (amber > 20°, red > 60° or > 20° with twist, held 2 s) |
 | `safelift.py` | Live camera window, alarm and beep, background writer to Snowflake |
 | `gemma.py` | Gemma calls with retry, 20 s timeout and a labelled cache |
+| `gate.py` | Setup gate: `read_plan` turns a SYNTHETIC plan photo into plan rules JSON (`python gate.py` reads every `demo/plan_*.png`) |
+| `demo/make_plans.py` | Renders the SYNTHETIC plan images in `demo/` (macOS font path) |
 | `dashboard/streamlit_app.py` | Trainer dashboard (Streamlit in Snowflake) |
 | `load_guidance.py` | Loads official guidance into Cortex Search |
 

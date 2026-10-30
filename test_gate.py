@@ -35,8 +35,9 @@ def test_demo_plans_read_from_cache_offline(monkeypatch):
     monkeypatch.setattr(gemma, "client", offline)
     monkeypatch.setattr(gemma.time, "sleep", lambda s: None)
     assert len(PLANS) >= 2
+    rules = {}
     for p in PLANS:
-        rules, src = gate.read_plan(p)
+        rules[p.stem], src = gate.read_plan(p)
         assert src == "cache"
-        assert rules["staff_required"] >= 1 and rules["equipment"]
-    assert gate.read_plan(PLANS[0])[0]["staff_required"] == 2  # bed_to_chair: hoist + 2 staff
+        assert rules[p.stem]["staff_required"] >= 1 and rules[p.stem]["equipment"]
+    assert rules["plan_bed_to_chair"]["staff_required"] == 2  # the demo plan: hoist + 2 staff
